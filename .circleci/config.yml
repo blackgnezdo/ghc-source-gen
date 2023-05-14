@@ -56,14 +56,19 @@ workflows:
             resolver:
             - lts-16.31
             - lts-18.28
+            - lts-20.20
     - build:
         name: build-ghc-9.0
         stack_yaml: stack-9.0.yaml
     - build:
         name: build-ghc-9.2
         stack_yaml: stack-9.2.yaml
+    - build:
+        name: build-ghc-9.4
+        stack_yaml: stack-9.4.yaml
     - build-success:
         requires:
         - build
         - build-ghc-9.0
         - build-ghc-9.2
+        - build-ghc-9.4
