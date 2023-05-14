@@ -103,7 +103,7 @@ forall' ts = noExt hsForAllTy (map mkLocated ts) . mkLocated
 (==>) cs = hsQualTy (mkLocated (map mkLocated cs)) . mkLocated
   where
 #if MIN_VERSION_ghc(9,4,0)
-    hsQualTy = noExt HsQualTy 
+    hsQualTy = noExt HsQualTy
 #elif MIN_VERSION_ghc(9,2,0)
     hsQualTy = noExt HsQualTy . Just
 #else
