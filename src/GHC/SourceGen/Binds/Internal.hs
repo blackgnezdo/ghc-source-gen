@@ -8,7 +8,11 @@
 module GHC.SourceGen.Binds.Internal where
 
 #if MIN_VERSION_ghc(9,0,0)
-import GHC.Types.Basic (Origin(Generated))
+import GHC.Types.Basic ( Origin(Generated)
+#if MIN_VERSION_ghc(9,8,0)
+                       , DoPmc (DoPmc)
+#endif
+                       )
 import GHC.Data.Bag (listToBag)
 #else
 import BasicTypes (Origin(Generated))
@@ -83,12 +87,21 @@ data RawGRHSs = RawGRHSs
 
 matchGroup :: HsMatchContext' -> [RawMatch] -> MatchGroup' LHsExpr'
 matchGroup context matches =
-    noExt MG (mkLocated $ map (mkLocated . mkMatch) matches)
+#if MIN_VERSION_ghc(9,8,0)
+    MG (Generated DoPmc)
+#elif MIN_VERSION_ghc(9,6,0)
+    MG Generated
+#else
+    noExt MG
+#endif
+                            matches'
 #if !MIN_VERSION_ghc(8,6,0)
                             [] PlaceHolder
-#endif
+#elif !MIN_VERSION_ghc(9,6,0)
                             Generated
+#endif                            
   where
+    matches' = mkLocated $ map (mkLocated . mkMatch) matches
     mkMatch :: RawMatch -> Match' LHsExpr'
     mkMatch r = withEpAnnNotUsed Match context
                     (map builtPat $ map parenthesize $ rawMatchPats r)

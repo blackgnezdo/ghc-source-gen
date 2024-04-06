@@ -21,8 +21,15 @@ module GHC.SourceGen.Overloaded
 import GHC.Hs.Type
     ( HsType(..)
     , HsTyVarBndr(..)
+#if MIN_VERSION_ghc(9,8,0)
+    , HsBndrVis (HsBndrRequired)
+#endif
     )
-import GHC.Hs (IE(..), IEWrappedName(..))
+import GHC.Hs (IE(..), IEWrappedName(..)
+#if MIN_VERSION_ghc(9,6,0)
+    , noExtField
+#endif
+    )
 #if !MIN_VERSION_ghc(8,6,0)
 import PlaceHolder(PlaceHolder(..))
 #endif
@@ -276,8 +283,11 @@ instance BVar HsType' where
 
 #if MIN_VERSION_ghc(9,0,0)
 instance BVar HsTyVarBndr' where
+#if MIN_VERSION_ghc(9,8,0)
+    bvar = withEpAnnNotUsed UserTyVar HsBndrRequired . typeRdrName . UnqualStr
+#else
     bvar = withEpAnnNotUsed UserTyVar () . typeRdrName . UnqualStr
-
+#endif
 instance BVar HsTyVarBndrS' where
     bvar = withEpAnnNotUsed UserTyVar SpecifiedSpec . typeRdrName . UnqualStr
 #else
@@ -286,8 +296,21 @@ instance BVar HsTyVarBndr' where
 #endif
 
 instance Var IE' where
-    var n = noExt IEVar $ mkLocated $ IEName $ exportRdrName n
+    var n = ie_var $ mkLocated $ ie_name $ exportRdrName n
+      where
+        ie_var =
+#if MIN_VERSION_ghc(9,8,0)
+          IEVar Nothing
+#else
+          noExt IEVar
+#endif
+
+        ie_name = 
+#if MIN_VERSION_ghc(9,6,0)
+          noExt IEName
+#else
+          IEName
+#endif
 
 instance BVar IE' where
     bvar = var . UnqualStr
-

@@ -62,7 +62,7 @@ import RdrName (RdrName)
 import SrcLoc (SrcSpan, Located, GenLocated(..), mkGeneralSrcSpan)
 #endif
 
-#if MIN_VERSION_ghc(9,2,0)
+#if MIN_VERSION_ghc(9,2,0) && !MIN_VERSION_ghc(9,6,0)
 import GHC.Parser.Annotation
     ( SrcSpanAnn'(..)
     , AnnSortKey(..)
@@ -78,6 +78,10 @@ import GHC.Types.Basic (PromotionFlag(..))
 import BasicTypes (PromotionFlag(..))
 #else
 import GHC.Hs.Type (Promoted(..))
+#endif
+
+#if MIN_VERSION_ghc(9,8,0)
+import GHC.Hs.Type (HsBndrVis)
 #endif
 
 #if MIN_VERSION_ghc(8,10,0)
@@ -281,7 +285,10 @@ type IE' = IE GhcPs
 -- Instances:
 --
 -- * 'GHC.SourceGen.Overloaded.BVar'
-#if MIN_VERSION_ghc(9,0,0)
+#if MIN_VERSION_ghc(9,8,0)
+type HsTyVarBndr' = HsTyVarBndr (HsBndrVis GhcPs) GhcPs
+type HsTyVarBndrS' = HsTyVarBndr Specificity GhcPs
+#elif MIN_VERSION_ghc(9,0,0)
 type HsTyVarBndr' = HsTyVarBndr () GhcPs
 type HsTyVarBndrS' = HsTyVarBndr Specificity GhcPs
 #else
@@ -290,7 +297,7 @@ type HsTyVarBndrS' = HsTyVarBndr GhcPs
 #endif
 
 type HsLit' = HsLit GhcPs
-#if MIN_VERSION_ghc(9,0,0)
+#if MIN_VERSION_ghc(9,0,0) && !MIN_VERSION_ghc(9,6,0)
 type HsModule' = HsModule
 #else
 type HsModule' = HsModule GhcPs
@@ -323,7 +330,11 @@ type LHsSigWcType' = LHsSigWcType GhcPs
 type LHsWcType' = LHsWcType GhcPs
 type HsDerivingClause' = HsDerivingClause GhcPs
 type LHsRecField' arg = LHsRecField GhcPs arg
+#if MIN_VERSION_ghc(9,8,0)
+type LHsRecUpdField' = LHsRecUpdField GhcPs GhcPs
+#else
 type LHsRecUpdField' = LHsRecUpdField GhcPs
+#endif
 type LPat' = LPat GhcPs
 type TyFamInstDecl' = TyFamInstDecl GhcPs
 
