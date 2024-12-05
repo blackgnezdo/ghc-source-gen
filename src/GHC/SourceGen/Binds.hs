@@ -46,19 +46,16 @@ module GHC.SourceGen.Binds
     , (<--)
     ) where
 
-#if MIN_VERSION_ghc(9,0,0)
 import GHC (LexicalFixity(..))
-#else
-import GHC.Types.Basic (LexicalFixity(..))
-#endif
 import Data.Bool (bool)
 import Data.Maybe (fromMaybe)
 import GHC.Hs.Binds
 import GHC.Hs.Expr
 import GHC.Hs.Type
 import GHC.Plugins (isSymOcc)
-#if !MIN_VERSION_ghc(9,0,1)
-import GHC.Tc.Types.Evidence (HsWrapper(WpHole))
+
+#if MIN_VERSION_ghc(9,10,0)
+import GHC.Parser.Annotation (noAnn)
 #endif
 import GHC.SourceGen.Binds.Internal
 import GHC.SourceGen.Name
@@ -73,8 +70,15 @@ import GHC.SourceGen.Type.Internal (sigWcType)
 -- > typeSigs ["f", "g"] (var "A")
 typeSigs :: HasValBind t => [OccNameStr] -> HsType' -> t
 typeSigs names t =
+#if MIN_VERSION_ghc(9,10,0)
+    sigB $ TypeSig ann (map (typeRdrName . unqual) names)
+        $ sigWcType t
+  where
+    ann = AnnSig noAnn []
+#else
     sigB $ withEpAnnNotUsed TypeSig (map (typeRdrName . unqual) names)
         $ sigWcType t
+#endif
 
 -- | Declares the type of a single function or value.
 --
@@ -101,12 +105,11 @@ typeSig n = typeSigs [n]
 funBindsWithFixity :: HasValBind t => Maybe LexicalFixity -> OccNameStr -> [RawMatch] -> t
 funBindsWithFixity fixity name matches = bindB $ withPlaceHolder
         (noExt FunBind name'
-            (matchGroup context matches) 
-#if !MIN_VERSION_ghc(9,0,1)
-            WpHole
-#endif
+            (matchGroup context matches)
             )
+#if !MIN_VERSION_ghc(9,6,0)
         []
+#endif
   where
     name' = valueRdrName $ unqual name
     occ = valueOccName name
@@ -185,11 +188,23 @@ valBind name = valBindGRHSs name . rhs
 -- >       ]
 patBindGRHSs :: HasPatBind t => Pat' -> RawGRHSs -> t
 patBindGRHSs p g =
+#if MIN_VERSION_ghc(9,10,0)
+    bindB
+        $ withPlaceHolder
+            (withPlaceHolder
+                (noExt PatBind (builtPat p) (noExt HsNoMultAnn) (mkGRHSs g)))
+#elif MIN_VERSION_ghc(9,6,0)
+    bindB
+        $ withPlaceHolder
+            (withPlaceHolder
+                (withEpAnnNotUsed PatBind (builtPat p) (mkGRHSs g)))
+#else
     bindB
         $ withPlaceHolder
             (withPlaceHolder
                 (withEpAnnNotUsed PatBind (builtPat p) (mkGRHSs g)))
         $ ([],[])
+#endif
 
 -- | Defines a pattern binding without any guards.
 --
@@ -281,7 +296,11 @@ guard s = guards [stmt s]
 -- > =====
 -- > guards [conP "Just" (bvar "x") <-- var "y", bvar "x"] unit
 guards :: [Stmt'] -> HsExpr' -> GuardedExpr
+#if MIN_VERSION_ghc(9,10,0)
+guards stmts e = GRHS noAnn (map mkLocated stmts) (mkLocated e)
+#else
 guards stmts e = withEpAnnNotUsed GRHS (map mkLocated stmts) (mkLocated e)
+#endif
 
 -- | An expression statement.  May be used in a do expression (with 'do'') or in a
 -- match (with 'guard').
@@ -298,9 +317,10 @@ stmt e =
 -- > =====
 -- > bvar "x" <-- var "act"
 (<--) :: Pat' -> HsExpr' -> Stmt'
+#if MIN_VERSION_ghc(9,10,0)
+p <-- e = withPlaceHolder $ BindStmt [] (builtPat p) (mkLocated e)
+#else
 p <-- e = withPlaceHolder $ withEpAnnNotUsed BindStmt (builtPat p) (mkLocated e)
-#if !MIN_VERSION_ghc(9,0,0)
-         noSyntaxExpr noSyntaxExpr
 #endif
 infixl 1 <--
 

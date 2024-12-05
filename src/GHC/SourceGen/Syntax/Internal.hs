@@ -34,13 +34,7 @@ import GHC.Hs
     , LHsSigWcType
     , LHsWcType
     , TyFamInstDecl
-#if !MIN_VERSION_ghc(8,8,0)
-    , LHsRecField
-    , LHsRecUpdField
-#endif
-#if MIN_VERSION_ghc(9,0,0)
     , HsPatSigType
-#endif
 #if MIN_VERSION_ghc(9,2,0)
     , HsConDeclH98Details
 #else
@@ -48,21 +42,15 @@ import GHC.Hs
 #endif
     )
 import GHC.Hs.Binds (Sig, HsLocalBinds)
-#if MIN_VERSION_ghc(8,6,0)
 import GHC.Hs.Decls (DerivStrategy)
-#else
-import BasicTypes (DerivStrategy)
-#endif
 import GHC.Hs.Decls (HsDerivingClause)
 import GHC.Hs.Pat
-#if MIN_VERSION_ghc(9,0,0)
-import GHC.Types.SrcLoc (SrcSpan, Located, GenLocated(..), mkGeneralSrcSpan)
-#else
-import RdrName (RdrName)
-import SrcLoc (SrcSpan, Located, GenLocated(..), mkGeneralSrcSpan)
+#if MIN_VERSION_ghc(9,10,0)
+import Language.Haskell.Syntax.Extension (NoGhcTc)
 #endif
+import GHC.Types.SrcLoc (SrcSpan, Located, GenLocated(..), mkGeneralSrcSpan)
 
-#if MIN_VERSION_ghc(9,2,0)
+#if MIN_VERSION_ghc(9,2,0) && !MIN_VERSION_ghc(9,6,0)
 import GHC.Parser.Annotation
     ( SrcSpanAnn'(..)
     , AnnSortKey(..)
@@ -72,26 +60,15 @@ import GHC.Parser.Annotation
     )
 #endif
 
-#if MIN_VERSION_ghc(9,0,0)
 import GHC.Types.Basic (PromotionFlag(..))
-#elif MIN_VERSION_ghc(8,8,0)
-import BasicTypes (PromotionFlag(..))
-#else
-import GHC.Hs.Type (Promoted(..))
+
+#if MIN_VERSION_ghc(9,8,0)
+import GHC.Hs.Type (HsBndrVis)
 #endif
 
-#if MIN_VERSION_ghc(8,10,0)
 import qualified GHC.Hs as GHC
-#elif MIN_VERSION_ghc(8,6,0)
-import qualified GHC.Hs.Extension as GHC
-#else
-import qualified HsExtension as GHC
-import qualified PlaceHolder as GHC
-#endif
 
-#if MIN_VERSION_ghc(9,0,0)
 import GHC.Types.Var (Specificity)
-#endif
 
 #if MIN_VERSION_ghc(9,4,0)
 import GHC.Parser.Annotation
@@ -99,79 +76,49 @@ import GHC.Parser.Annotation
 
 import GHC.Hs.Extension (GhcPs)
 
-#if MIN_VERSION_ghc(8,10,0)
 type NoExtField = GHC.NoExtField
-#elif MIN_VERSION_ghc(8,6,0)
-type NoExtField = GHC.NoExt
-#endif
 
-#if MIN_VERSION_ghc(8,10,0)
 noExt :: (NoExtField -> a) -> a
 noExt = ($ GHC.NoExtField)
-#elif MIN_VERSION_ghc(8,6,0)
-noExt :: (NoExtField -> a) -> a
-noExt = ($ GHC.NoExt)
-#else
-noExt :: a -> a
-noExt = id
-#endif
 
-#if MIN_VERSION_ghc(8,6,0)
 noExtOrPlaceHolder :: (NoExtField -> a) -> a
 noExtOrPlaceHolder = noExt
-#else
-noExtOrPlaceHolder :: (GHC.PlaceHolder -> a) -> a
-noExtOrPlaceHolder = withPlaceHolder
-#endif
 
-#if MIN_VERSION_ghc(9,2,0)
-withEpAnnNotUsed :: (EpAnn ann -> a) -> a
-withEpAnnNotUsed = ($ EpAnnNotUsed)
-#elif MIN_VERSION_ghc(8,6,0)
-withEpAnnNotUsed :: (NoExtField -> a) -> a
-withEpAnnNotUsed = noExt
-#else
+#if MIN_VERSION_ghc(9,10,0)
 withEpAnnNotUsed :: a -> a
 withEpAnnNotUsed = id
+#elif MIN_VERSION_ghc(9,2,0)
+withEpAnnNotUsed :: (EpAnn ann -> a) -> a
+withEpAnnNotUsed = ($ EpAnnNotUsed)
+#else
+withEpAnnNotUsed :: (NoExtField -> a) -> a
+withEpAnnNotUsed = noExt
 #endif
 
-#if MIN_VERSION_ghc(9,2,0)
+#if MIN_VERSION_ghc(9,10,0)
+withNoAnnSortKey :: (AnnSortKey tag -> a) -> a
+withNoAnnSortKey = ($ NoAnnSortKey)
+#elif MIN_VERSION_ghc(9,2,0)
 withNoAnnSortKey :: (AnnSortKey -> a) -> a
 withNoAnnSortKey = ($ NoAnnSortKey)
-#elif MIN_VERSION_ghc(8,6,0)
+#else
 withNoAnnSortKey :: (NoExtField -> a) -> a
 withNoAnnSortKey = noExt
-#else
-withNoAnnSortKey :: a -> a
-withNoAnnSortKey = id
 #endif
 
 #if MIN_VERSION_ghc(9,2,0)
 withEmptyEpAnnComments :: (EpAnnComments -> a) -> a
 withEmptyEpAnnComments = ($ emptyComments)
-#elif MIN_VERSION_ghc(8,6,0)
+#else
 withEmptyEpAnnComments :: (NoExtField -> a) -> a
 withEmptyEpAnnComments = noExt
-#else
-withEmptyEpAnnComments :: a -> a
-withEmptyEpAnnComments = id
 #endif
 
-#if MIN_VERSION_ghc(8,6,0)
 withPlaceHolder :: a -> a
 withPlaceHolder = id
-#else
-withPlaceHolder :: (GHC.PlaceHolder -> a) -> a
-withPlaceHolder = ($ GHC.PlaceHolder)
-#endif
 
-#if MIN_VERSION_ghc(8,6,0)
 withPlaceHolders :: a -> a
 withPlaceHolders = id
-#else
-withPlaceHolders :: ([GHC.PlaceHolder] -> a) -> a
-withPlaceHolders = ($ [])
-#endif
 
 builtSpan :: SrcSpan
 builtSpan = mkGeneralSrcSpan "<ghc-source-gen>"
@@ -179,41 +126,35 @@ builtSpan = mkGeneralSrcSpan "<ghc-source-gen>"
 builtLoc :: e -> Located e
 builtLoc = L builtSpan
 
-#if MIN_VERSION_ghc(9,2,0)
+#if MIN_VERSION_ghc(9,10,0)
+type SrcSpanAnn ann = EpAnn ann
+#elif MIN_VERSION_ghc(9,2,0)
 type SrcSpanAnn ann = GHC.SrcSpanAnn' (EpAnn ann)
 #else
 type SrcSpanAnn ann = SrcSpan
 #endif
 
+#if MIN_VERSION_ghc(9,10,0)
+mkLocated :: (NoAnn ann) => a -> GenLocated (SrcSpanAnn ann) a
+mkLocated = L (EpAnn (spanAsAnchor builtSpan) noAnn emptyComments)
+#elif MIN_VERSION_ghc(9,2,0)
 mkLocated :: a -> GenLocated (SrcSpanAnn ann) a
-mkLocated = L (toAnn builtSpan)
-  where
-#if MIN_VERSION_ghc(9,2,0)
-    toAnn = SrcSpanAnn EpAnnNotUsed
+mkLocated = L (SrcSpanAnn EpAnnNotUsed builtSpan)
 #else
-    toAnn = id
+mkLocated :: a -> GenLocated (SrcSpanAnn ann) a
+mkLocated = L builtSpan
 #endif
 
--- In GHC-8.8.* (but not >=8.10 or <=8.6), source locations for Pat aren't
--- stored in each node, and LPat is a synonym for Pat.
 builtPat :: Pat' -> LPat'
 #if MIN_VERSION_ghc(9,2,0)
 builtPat = mkLocated
-#elif MIN_VERSION_ghc(8,8,0) && !MIN_VERSION_ghc(8,10,0)
-builtPat = id
 #else
 builtPat = builtLoc
 #endif
 
-#if MIN_VERSION_ghc(8,8,0)
 promoted, notPromoted :: PromotionFlag
 promoted = IsPromoted
 notPromoted = NotPromoted
-#else
-promoted, notPromoted :: Promoted
-promoted = Promoted
-notPromoted = NotPromoted
-#endif
 
 -- TODO: these Haddock cross-references don't link to the actual
 -- definition, only to the module they come from.  I think it's
@@ -281,16 +222,16 @@ type IE' = IE GhcPs
 -- Instances:
 --
 -- * 'GHC.SourceGen.Overloaded.BVar'
-#if MIN_VERSION_ghc(9,0,0)
-type HsTyVarBndr' = HsTyVarBndr () GhcPs
+#if MIN_VERSION_ghc(9,8,0)
+type HsTyVarBndr' = HsTyVarBndr (HsBndrVis GhcPs) GhcPs
 type HsTyVarBndrS' = HsTyVarBndr Specificity GhcPs
 #else
-type HsTyVarBndr' = HsTyVarBndr GhcPs
-type HsTyVarBndrS' = HsTyVarBndr GhcPs
+type HsTyVarBndr' = HsTyVarBndr () GhcPs
+type HsTyVarBndrS' = HsTyVarBndr Specificity GhcPs
 #endif
 
 type HsLit' = HsLit GhcPs
-#if MIN_VERSION_ghc(9,0,0)
+#if !MIN_VERSION_ghc(9,6,0)
 type HsModule' = HsModule
 #else
 type HsModule' = HsModule GhcPs
@@ -299,10 +240,10 @@ type HsBind' = HsBind GhcPs
 type HsLocalBinds' = HsLocalBinds GhcPs
 type HsValBinds' = HsValBinds GhcPs
 type Sig' = Sig GhcPs
-#if MIN_VERSION_ghc(9,0,0)
-type HsMatchContext' = HsMatchContext GhcPs
+#if MIN_VERSION_ghc(9,10,0)
+type HsMatchContext' = HsMatchContext (GHC.LIdP (NoGhcTc GhcPs))
 #else
-type HsMatchContext' = HsMatchContext RdrName
+type HsMatchContext' = HsMatchContext GhcPs
 #endif
 type Match' = Match GhcPs
 type MatchGroup' = MatchGroup GhcPs
@@ -323,21 +264,17 @@ type LHsSigWcType' = LHsSigWcType GhcPs
 type LHsWcType' = LHsWcType GhcPs
 type HsDerivingClause' = HsDerivingClause GhcPs
 type LHsRecField' arg = LHsRecField GhcPs arg
+#if MIN_VERSION_ghc(9,8,0)
+type LHsRecUpdField' = LHsRecUpdField GhcPs GhcPs
+#else
 type LHsRecUpdField' = LHsRecUpdField GhcPs
+#endif
 type LPat' = LPat GhcPs
 type TyFamInstDecl' = TyFamInstDecl GhcPs
 
-#if MIN_VERSION_ghc(8,6,0)
 type DerivStrategy' = DerivStrategy GhcPs
-#else
-type DerivStrategy' = DerivStrategy
-#endif
 
-#if MIN_VERSION_ghc(9,0,0)
 type HsPatSigType' = HsPatSigType GhcPs
-#else
-type HsPatSigType' = LHsSigWcType'
-#endif
 
 #if MIN_VERSION_ghc(9,2,0)
 type LIdP = GHC.LIdP GHC.GhcPs
@@ -345,12 +282,12 @@ type LIdP = GHC.LIdP GHC.GhcPs
 type LIdP = Located (GHC.IdP GHC.GhcPs)
 #endif
 
-#if MIN_VERSION_ghc(9,4,0)
+#if MIN_VERSION_ghc(9,4,0) && !MIN_VERSION_ghc(9,10,0)
 mkUniToken :: GenLocated TokenLocation (GHC.HsUniToken t u)
 mkUniToken = L NoTokenLoc GHC.HsNormalTok
 #endif
 
-#if MIN_VERSION_ghc(9,4,0)
+#if MIN_VERSION_ghc(9,4,0) && !MIN_VERSION_ghc(9,10,0)
 mkToken :: GenLocated TokenLocation (GHC.HsToken t)
 mkToken = L NoTokenLoc GHC.HsTok
 #endif

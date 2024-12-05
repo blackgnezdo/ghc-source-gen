@@ -26,8 +26,13 @@ import GHC.SourceGen.Pat.Internal
 import GHC.SourceGen.Syntax.Internal
 import GHC.SourceGen.Type.Internal (patSigType)
 
-#if MIN_VERSION_ghc(9,2,0)
+#if MIN_VERSION_ghc(9,10,0)
+import GHC.Parser.Annotation (EpAnn(..), EpToken(..), noAnn, noSpanAnchor)
+#elif MIN_VERSION_ghc(9,2,0)
 import GHC.Parser.Annotation (EpAnn(..))
+#endif
+#if MIN_VERSION_ghc(9,6,0) && !MIN_VERSION_ghc(9,10,0)
+import GHC (noHsTok)
 #endif
 
 -- | A wild pattern (@_@).
@@ -40,7 +45,18 @@ wildP = noExtOrPlaceHolder WildPat
 -- > =====
 -- > asP "a" (var "B")
 asP :: RdrNameStr -> Pat' -> Pat'
-v `asP` p = withEpAnnNotUsed AsPat (valueRdrName v) $ builtPat $ parenthesize p
+v `asP` p =
+#if MIN_VERSION_ghc(9,10,0)
+  AsPat (EpTok noSpanAnchor) (valueRdrName v)
+    (builtPat $ parenthesize p)
+#elif MIN_VERSION_ghc(9,6,0)
+  withEpAnnNotUsed AsPat (valueRdrName v)
+    noHsTok
+    (builtPat $ parenthesize p)
+#else
+  withEpAnnNotUsed AsPat (valueRdrName v)
+    (builtPat $ parenthesize p)
+#endif
 
 -- | A pattern constructor.
 --
@@ -50,10 +66,10 @@ v `asP` p = withEpAnnNotUsed AsPat (valueRdrName v) $ builtPat $ parenthesize p
 conP :: RdrNameStr -> [Pat'] -> Pat'
 conP c = conPat (valueRdrName c) . prefixCon . map (builtPat . parenthesize)
   where
-#if MIN_VERSION_ghc(9,0,0)
-    conPat = withEpAnnNotUsed ConPat
+#if MIN_VERSION_ghc(9,10,0)
+    conPat = ConPat []
 #else
-    conPat = ConPatIn
+    conPat = withEpAnnNotUsed ConPat
 #endif
 #if MIN_VERSION_ghc(9,2,0)
     prefixCon = PrefixCon []
@@ -71,17 +87,23 @@ conP_ c = conP c []
 
 recordConP :: RdrNameStr -> [(RdrNameStr, Pat')] -> Pat'
 recordConP c fs =
-#if MIN_VERSION_ghc(9,0,0)
-  withEpAnnNotUsed ConPat
+#if MIN_VERSION_ghc(9,10,0)
+  ConPat []
 #else
-  ConPatIn
+  withEpAnnNotUsed ConPat
 #endif
   (valueRdrName c)
         $ RecCon $ HsRecFields (map mkRecField fs) Nothing -- No ".."
   where
     mkRecField :: (RdrNameStr, Pat') -> LHsRecField' LPat'
     mkRecField (f, p) =
-#if MIN_VERSION_ghc(9,4,0)
+#if MIN_VERSION_ghc(9,10,0)
+        mkLocated $ HsFieldBind
+            { hfbAnn = noAnn
+            , hfbLHS = mkLocated $ withPlaceHolder $ noExt FieldOcc $ valueRdrName f
+            , hfbRHS = builtPat p
+            , hfbPun = False      
+#elif MIN_VERSION_ghc(9,4,0)
         mkLocated $ HsFieldBind
             { hfbAnn = EpAnnNotUsed
             , hfbLHS = mkLocated $ withPlaceHolder $ noExt FieldOcc $ valueRdrName f
@@ -105,7 +127,11 @@ recordConP c fs =
 -- > =====
 -- > strictP (bvar x)
 strictP :: Pat' -> Pat'
+#if MIN_VERSION_ghc(9,10,0)
+strictP = BangPat [] . builtPat . parenthesize
+#else
 strictP = withEpAnnNotUsed BangPat . builtPat . parenthesize
+#endif
 
 -- | A lazy pattern match.
 --
@@ -113,7 +139,11 @@ strictP = withEpAnnNotUsed BangPat . builtPat . parenthesize
 -- > =====
 -- > lazyP (conP "A" [bvar x])
 lazyP :: Pat' -> Pat'
+#if MIN_VERSION_ghc(9,10,0)
+lazyP = LazyPat [] . builtPat . parenthesize
+#else
 lazyP = withEpAnnNotUsed LazyPat . builtPat . parenthesize
+#endif
 
 -- | A pattern type signature
 --
@@ -121,10 +151,8 @@ lazyP = withEpAnnNotUsed LazyPat . builtPat . parenthesize
 -- > =====
 -- > sigPat (bvar "x") (var "y")
 sigP :: Pat' -> HsType' -> Pat'
-#if MIN_VERSION_ghc(8,8,0)
-sigP p t = withEpAnnNotUsed SigPat (builtPat p) (patSigType t)
-#elif MIN_VERSION_ghc(8,6,0)
-sigP p t = SigPat (patSigType t) (builtPat p)
+#if MIN_VERSION_ghc(9,10,0)
+sigP p t = SigPat [] (builtPat p) (patSigType t)
 #else
-sigP p t = SigPatIn (builtPat p) (patSigType t)
+sigP p t = withEpAnnNotUsed SigPat (builtPat p) (patSigType t)
 #endif

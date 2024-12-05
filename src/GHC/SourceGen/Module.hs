@@ -26,32 +26,50 @@ module GHC.SourceGen.Module
     , moduleContents
     )  where
 
-import GHC.Hs.ImpExp (LIEWrappedName, IEWildcard(..), IEWrappedName(..), IE(..))
+import GHC.Hs.ImpExp
+    ( IEWildcard(..), IEWrappedName(..), IE(..)
+#if MIN_VERSION_ghc(9,6,0)
+    , ImportListInterpretation (EverythingBut, Exactly), XImportDeclPass (ideclSourceText, ideclImplicit)
+#else
+    , LIEWrappedName
+#endif
+    )
 import GHC.Hs
     ( HsModule(..)
     , ImportDecl(..)
-#if MIN_VERSION_ghc(8,10,0)
     , ImportDeclQualifiedStyle(..)
-#endif
 #if MIN_VERSION_ghc(9,2,0)
     , EpAnn(..)
 #endif
+#if MIN_VERSION_ghc(9,6,0) && !MIN_VERSION_ghc(9,10,0)
+    , LayoutInfo (NoLayoutInfo)
+#endif
+#if MIN_VERSION_ghc(9,6,0)
+    , hsmodDeprecMessage, hsmodHaddockModHeader, hsmodAnn, AnnKeywordId, XModulePs (XModulePs, hsmodLayout), noAnn, GhcPs, XImportDeclPass (XImportDeclPass, ideclAnn), SrcSpanAnnA, noExtField
+#endif
     )
-#if MIN_VERSION_ghc(9,0,0)
+#if !MIN_VERSION_ghc(9,6,0)
 import GHC.Types.SrcLoc (LayoutInfo(..))
+#endif
 import GHC.Unit.Module (IsBootInterface(..))
 import GHC.Types.Name.Reader (RdrName)
-#else
-import RdrName (RdrName)
-#endif
 #if MIN_VERSION_ghc(9,4,0)
 import GHC.Types.PkgQual (RawPkgQual(..))
 #endif
+#if MIN_VERSION_ghc(9,10,0)
+import GHC.Parser.Annotation (EpLayout (..), noAnn)
+#endif
+
 
 import GHC.SourceGen.Syntax.Internal
-import GHC.SourceGen.Name
 import GHC.SourceGen.Name.Internal
 import GHC.SourceGen.Lit.Internal (noSourceText)
+import GHC.SourceGen.Name (unqual)
+#if MIN_VERSION_ghc(9,4,0)
+import GHC.SourceGen.Name (RdrNameStr, ModuleNameStr(unModuleNameStr), OccNameStr)
+import GHC.Types.SourceText (SourceText(NoSourceText))
+import GHC.Types.SrcLoc (GenLocated)
+#endif
 
 module'
     :: Maybe ModuleNameStr
@@ -64,66 +82,85 @@ module' name exports imports decls = HsModule
     , hsmodExports = fmap (mkLocated . map mkLocated) exports
     , hsmodImports = map mkLocated imports
     , hsmodDecls = fmap mkLocated decls
+#if MIN_VERSION_ghc(9,6,0)
+    , hsmodExt = XModulePs
+      { hsmodAnn = noAnn
+#if MIN_VERSION_ghc(9,10,0)
+      , hsmodLayout = EpNoLayout
+#else
+      , hsmodLayout = NoLayoutInfo
+#endif
+      , hsmodDeprecMessage = Nothing
+      , hsmodHaddockModHeader = Nothing }
+#else
     , hsmodDeprecMessage = Nothing
     , hsmodHaddockModHeader = Nothing
-#if MIN_VERSION_ghc(9,0,0)
     , hsmodLayout = NoLayoutInfo
-#endif
-#if MIN_VERSION_ghc(9,2,0)
+#  if MIN_VERSION_ghc(9,2,0)
     , hsmodAnn = EpAnnNotUsed
+#  endif
 #endif
     }
 
 qualified' :: ImportDecl' -> ImportDecl'
 qualified' d = d { ideclQualified =
-#if MIN_VERSION_ghc(8,10,0)
     QualifiedPre
-#else
-    True
-#endif
 }
 
 as' :: ImportDecl' -> ModuleNameStr -> ImportDecl'
 as' d m = d { ideclAs = Just (mkLocated $ unModuleNameStr m) }
 
 import' :: ModuleNameStr -> ImportDecl'
-import' m = noSourceText (withEpAnnNotUsed ImportDecl)
+import' m = importDecl
             (mkLocated $ unModuleNameStr m)
 #if MIN_VERSION_ghc(9,4,0)
             NoRawPkgQual
 #else
-            Nothing 
+            Nothing
 #endif
-#if MIN_VERSION_ghc(9,0,0)
             NotBoot
-#else
             False
-#endif
-            False
-#if MIN_VERSION_ghc(8,10,0)
             NotQualified
-#else
+#if !MIN_VERSION_ghc(9,6,0)
             False
 #endif
-            False Nothing Nothing
+            Nothing Nothing
+  where
+#if MIN_VERSION_ghc(9,10,0)
+    importDecl = ImportDecl
+            (XImportDeclPass{ ideclAnn = noAnn
+            , ideclSourceText = NoSourceText
+            , ideclImplicit = False
+             })
+#elif MIN_VERSION_ghc(9,6,0)
+    importDecl = ImportDecl
+            (XImportDeclPass{ ideclAnn = EpAnnNotUsed
+            , ideclSourceText = NoSourceText
+            , ideclImplicit = False
+             })
+#else
+    importDecl = noSourceText (withEpAnnNotUsed ImportDecl)
+#endif
 
 exposing :: ImportDecl' -> [IE'] -> ImportDecl'
 exposing d ies = d
+#if MIN_VERSION_ghc(9,6,0)
+    { ideclImportList = Just (Exactly, mkLocated $ map mkLocated ies) }
+#else
     { ideclHiding = Just (False, mkLocated $ map mkLocated ies) }
+#endif
 
 hiding :: ImportDecl' -> [IE'] -> ImportDecl'
 hiding d ies = d
+#if MIN_VERSION_ghc(9,6,0)
+    { ideclImportList = Just (EverythingBut, mkLocated $ map mkLocated ies) }
+#else
     { ideclHiding = Just (True, mkLocated $ map mkLocated ies) }
+#endif
 
 -- | Adds the @{-# SOURCE #-}@ pragma to an import.
 source :: ImportDecl' -> ImportDecl'
-source d = d { ideclSource =
-#if MIN_VERSION_ghc(9,0,0)
-    IsBoot
-#else
-    True
-#endif
-}
+source d = d { ideclSource = IsBoot }
 
 -- | Exports all methods and/or constructors.
 --
@@ -131,7 +168,11 @@ source d = d { ideclSource =
 -- > =====
 -- > thingAll "A"
 thingAll :: RdrNameStr -> IE'
-thingAll = withEpAnnNotUsed IEThingAll . wrappedName
+#if MIN_VERSION_ghc(9,10,0)
+thingAll n = IEThingAll (Nothing, []) (wrappedName n) Nothing
+#else
+thingAll = withEpAnnNotUsed' IEThingAll . wrappedName
+#endif
 
 -- | Exports specific methods and/or constructors.
 --
@@ -139,7 +180,10 @@ thingAll = withEpAnnNotUsed IEThingAll . wrappedName
 -- > =====
 -- > thingWith "A" ["b", "C"]
 thingWith :: RdrNameStr -> [OccNameStr] -> IE'
-thingWith n cs = withEpAnnNotUsed IEThingWith (wrappedName n) NoIEWildcard
+#if MIN_VERSION_ghc(9,10,0)
+thingWith n cs = IEThingWith (Nothing, []) (wrappedName n) NoIEWildcard (map (wrappedName . unqual) cs) Nothing
+#else
+thingWith n cs = withEpAnnNotUsed' IEThingWith (wrappedName n) NoIEWildcard
                     (map (wrappedName . unqual) cs)
 #if !MIN_VERSION_ghc(9,2,0)
                     -- The parsing step leaves the list of fields empty
@@ -147,11 +191,16 @@ thingWith n cs = withEpAnnNotUsed IEThingWith (wrappedName n) NoIEWildcard
                     -- constructors.
                     []
 #endif
-
+#endif
 -- TODO: support "mixed" syntax with both ".." and explicit names.
 
+#if MIN_VERSION_ghc(9,6,0)
+wrappedName :: RdrNameStr -> GenLocated SrcSpanAnnA (IEWrappedName GhcPs)
+wrappedName rNameStr = mkLocated (IEName noExtField $ exportRdrName rNameStr)
+#else
 wrappedName :: RdrNameStr -> LIEWrappedName RdrName
 wrappedName = mkLocated . IEName . exportRdrName
+#endif
 
 -- | Exports an entire module.
 --
@@ -161,4 +210,21 @@ wrappedName = mkLocated . IEName . exportRdrName
 -- > =====
 -- > moduleContents "M"
 moduleContents :: ModuleNameStr -> IE'
-moduleContents = withEpAnnNotUsed IEModuleContents . mkLocated . unModuleNameStr
+#if MIN_VERSION_ghc(9,10,0)
+moduleContents n = IEModuleContents (Nothing, []) (mkLocated (unModuleNameStr n))
+#else
+moduleContents = withEpAnnNotUsed' IEModuleContents . mkLocated . unModuleNameStr
+#endif
+
+#if MIN_VERSION_ghc(9,10,0)
+-- withEpAnnNotUsed' is not necessary for newer versions.
+#elif MIN_VERSION_ghc(9,8,0)
+withEpAnnNotUsed' :: ((Maybe x, EpAnn ann) -> a) -> a
+withEpAnnNotUsed' = ($ (Nothing, EpAnnNotUsed))
+#elif MIN_VERSION_ghc(9,2,0)
+withEpAnnNotUsed' :: (EpAnn ann -> a) -> a
+withEpAnnNotUsed' = withEpAnnNotUsed
+#else
+withEpAnnNotUsed' :: (NoExtField -> a) -> a
+withEpAnnNotUsed' = withEpAnnNotUsed
+#endif
